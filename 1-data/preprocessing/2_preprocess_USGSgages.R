@@ -81,4 +81,3 @@ annual_USGSsites <- yearly_bfi[,c(6,1,4,5,2,3)]
 trainingData <- assignVariables_preprocessing(annual_USGSsites)
 
 write.csv(trainingData, here('1-data/instrumented_all-predictors.csv'), row.names = FALSE)
-write.csv(trainingData, here('2-experiments/models/data/instrumented_all-predictors.csv'), row.names = FALSE)
