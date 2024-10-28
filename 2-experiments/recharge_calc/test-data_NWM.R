@@ -1,5 +1,9 @@
 # Initialize input datasets
-dataset <- #Year huc8 lat long
+dataset.raw <- read.csv("1-data/ArtificialPoints_20241028.csv") #Year huc8 lat long
+years <- c(1991:2020)
+
+dataset <- dataset.raw[rep(1:nrow(dataset), each = length(years)), ]
+dataset$Year <- rep(as.character(years), times = nrow(dataset.raw))
 
 temperature <- read.csv(here("1-data/NWM_T_WY.csv"), check.names = FALSE)
 precipitation <- read.csv(here("1-data/NWM_P_WY.csv"), check.names = FALSE)
@@ -19,9 +23,9 @@ for(i in 1:nrow(dataset)){
   year.site <- dataset$Year[i] #year needs to be character
 
   # Get indices for the streamgage HUC from variable datasets
-  huc.temp <- which(temperature$HUC8 == huc.site)
-  huc.precip <- which(precipitation$HUC8 == huc.site)
-  huc.aet <- which(actualET$HUC8 == huc.site)
+  huc.temp <- which(temperature$huc8 == huc.site)
+  huc.precip <- which(precipitation$huc8 == huc.site)
+  huc.aet <- which(actualET$huc8 == huc.site)
   huc.vars <- which(spatialVariables$HUC8 == huc.site)
 
   variables$Temp_C[i] <- temperature[huc.temp, year.site]
@@ -30,11 +34,7 @@ for(i in 1:nrow(dataset)){
   variables[i,5:46] <- spatialVariables[huc.vars,3:44]
 
   # Extract elevation for point
-  coords <- dataset[i,3:4]
-  colnames(coords) <- c("x", "y")
-
-  suppressMessages(elev <- get_elev_point(coords, prj = 4326)) #wgs 84 proj
-  variables$Elevation_M[i] <- elev$elevation
+  variables$Elevation_M[i] <- dataset$Elev_m[i]
   pb$tick()
 }
 
