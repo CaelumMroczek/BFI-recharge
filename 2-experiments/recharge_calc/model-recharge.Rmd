@@ -1,5 +1,78 @@
+### Data Preparation
+
+#### Loading datasets
+
+```{r}
+model.trimmed <- xgb.load(here("2-experiments/models/xgb.trimmed-statewide"))
+feat <- read.csv(here("2-experiments/models/xgb.trimmed_feature-names.csv"))
+years <- 1991:2020
+
+#cleaning and prepping dataset
+artificial_pts <- read.csv( here("1-data/ArtificialPoints_dataset.csv"))
+feat.all <- unlist(c("HUC8", "Long", "Lat", feat)) #keep only predicting features and data to locate the site
+
+
+#Load hydroclimate datasets
+NWM_ET <- read.csv(here("1-data/NWM_ET_WY.csv"))
+NWM_P <- read.csv(here("1-data/NWM_P_WY.csv"))
+NWM_T <- read.csv(here("1-data/NWM_T_WY.csv"))
+```
+
+#### Replacing hydroclimate data with NWM inputs
+
+```{r}
+# Step 1: Reshape NWM_ET into long format
+NWM_ET_long <- NWM_ET %>%
+  pivot_longer(cols = starts_with("X"), names_to = "Year", values_to = "AET_MM") %>%
+  mutate(Year = as.numeric(sub("X", "", Year))) # Remove the 'X' and convert to numeric
+
+# Step 2: Repeat for NWM_P and NWM_T (assuming similar structure as NWM_ET)
+NWM_P_long <- NWM_P %>%
+  pivot_longer(cols = starts_with("X"), names_to = "Year", values_to = "Precip_MM") %>%
+  mutate(Year = as.numeric(sub("X", "", Year)))
+
+NWM_T_long <- NWM_T %>%
+  pivot_longer(cols = starts_with("X"), names_to = "Year", values_to = "Temp_C") %>%
+  mutate(Year = as.numeric(sub("X", "", Year)))
+
+artificial_pts_nwm <- artificial_pts %>%
+  # Remove existing columns if they exist
+  dplyr::select(-AET_MM, -Precip_MM, -Temp_C) %>%
+  # Join the new data
+  left_join(NWM_ET_long %>% dplyr::select(huc8, Year, AET_MM), by = c("HUC8" = "huc8", "Year" = "Year")) %>%
+  left_join(NWM_P_long %>% dplyr::select(huc8, Year, Precip_MM), by = c("HUC8" = "huc8", "Year" = "Year")) %>%
+  left_join(NWM_T_long %>% dplyr::select(huc8, Year, Temp_C), by = c("HUC8" = "huc8", "Year" = "Year")) %>%
+  # Convert Temp_C from Kelvin to Celsius
+  mutate(Temp_C = Temp_C - 273.15)
+
+feat.ind <- which(colnames(artificial_pts_nwm) %in% feat.all)
+#Final predicting dataset for trimmed model
+artificial.Data <- artificial_pts_nwm[,feat.ind]
+
+column_order <- feat$x
+
+# Ensure HUC8, Long, and Lat are at the beginning of the order if you want to keep them
+final_order <- c("HUC8", "Long", "Lat", column_order)
+
+# Reorder artificial.Data columns
+artificial.Data <- artificial.Data %>% dplyr::select(all_of(final_order))
+```
+
 ### Model BFI predictions
 
+```{r}
+artificial.Data$Predicted_BFI <- inv.logit(predict(object = model.trimmed, newdata = as.matrix(artificial.Data[, 4:13])))
+
+```
+
 ### Water Balance Calc
+
+```{r}
+huc_avg <- artificial.Data %>%
+  group_by(HUC8) %>%
+  summarise(Precip_MM = mean(Precip_MM), AET_MM = mean(AET_MM), BFI = mean(Predicted_BFI), Recharge_MM = (Precip_MM - AET_MM)* BFI)
+
+write.csv(huc_avg, here('1-data/huc8_recharge_NWM.csv'))
+```
 
 ### HUC-8 Recharge
