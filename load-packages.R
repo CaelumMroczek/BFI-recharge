@@ -11,7 +11,7 @@ remotes::install_github("mikejohnson51/AOI")
 packages <- c("AOI", "data.table", "dataRetrieval", "dplyr","exactextractr",
               "ggplot2", "here", "lubridate", "raster", "readr",
               "renv", "rmarkdown", "sf", "sp", "stringr", "tidyverse", "terra",
-              "elevatr", "boot", "xgboost", "caret", "ggthemes", "hydroGOF")
+              "elevatr", "boot", "xgboost", "caret", "ggthemes", "hydroGOF", "viridis")
 
 # Install packages that are not already installed
 install_if_missing <- function(pkg) {

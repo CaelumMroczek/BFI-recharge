@@ -75,4 +75,38 @@ huc_avg <- artificial.Data %>%
 write.csv(huc_avg, here('1-data/huc8_recharge_NWM.csv'))
 ```
 
-### HUC-8 Recharge
+### HUC-8 Recharge Map
+
+```{r}
+# Load your shapefile
+shapefile_path <- here("1-data/raw/shapefile/huc8.shp")  # Update this path
+shapefile_data <- st_read(shapefile_path)
+
+# Assuming your data has a column for the recharge values
+# If it's in a separate CSV, load it and join with shapefile data
+data_path <- here("1-data/huc8_recharge_NWM.csv")  # Update this path if needed
+data <- read.csv(data_path)
+
+# Join data with shapefile on a common column
+shapefile_data <- merge(shapefile_data, data, by = "HUC8")  # Update 'common_column' accordingly
+```
+
+```{r}
+colors <- rev(c("#455ccf", "#3e9bfe", "#18d7ca", "#46f884", "#a4fc3c", "#e1dd37", "#fea431", "#f05b12", "#c32503", "#7a0403"))
+breaks <- c(0, 1, 2, 3, 4, 5, 10, 25, 50, 100, 200)
+
+ggplot(data = shapefile_data) +
+  geom_sf(aes(fill = Recharge_MM), color = "black", size = 0.3) +  
+  scale_fill_stepsn(colors = colors,
+                    values = scales::rescale(breaks, to = c(0, 1)),
+                    breaks = breaks,
+                    limits = c(0, 200),
+                    name = "Long-term mean\nrecharge (mm)") +
+  labs(title = "Re_M_WY [HUC8]") +
+  theme_minimal() +
+  theme(legend.position = "right", 
+        legend.title = element_text(size = 10), 
+        legend.text = element_text(size = 8))
+
+```
+
