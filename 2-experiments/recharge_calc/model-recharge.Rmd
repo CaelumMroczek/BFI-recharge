@@ -140,9 +140,8 @@ ggplot(data = NWM_shapefile) +
         legend.text = element_text(size=10)) #change legend text font size
 ```
 
-### Tables of Recharge by HUC
 ```{r}
-NWM_recharge <- data.frame(HUC8 = NWM_shapefile$HUC8, R_mm = NWM_shapefile$Re_M_WY)
+NWM_recharge <- data.frame(HUC8 = NWM_shapefile$HUC8, NWM_R_mm = NWM_shapefile$Re_M_WY)
 BFI_recharge <- data.frame(HUC8 = shapefile_data$HUC8, BFI_R_mm = shapefile_data$Recharge_MM)
 
 #Remove HUC that are present in the NWM dataset, but not in the BFI dataset
@@ -151,17 +150,11 @@ missing_HUC <- which(!(NWM_recharge$HUC8 %in% BFI_recharge$HUC8))
 NWM_recharge <- NWM_recharge[-missing_HUC,]
 
 
-merged_data <- NWM_recharge %>%
-  inner_join(BFI_recharge, by = "HUC8")
-
-merged_data <- merged_data %>%
-  mutate(residual = R_mm - BFI_R_mm)
-
-# Join data with shapefile on a common column
-shapefile_data <- merge(shapefile_data, merged_data, by = "HUC8")
-
-# Plot Residuals
-ggplot(data = shapefile_data) +
+merged_data <- NWM_recharge %>%  
+  inner_join(BFI_recharge, by = "HUC8") %>%
+  mutate(residual = NWM_R_mm - BFI_R_mm)
+  
+ggplot(data = merged_data) +
   geom_sf(aes(fill = residual), color = "black", size = 0.3)+
   labs(title = "Recharge Residual (NWM-BFI)") +
   theme_minimal() +
@@ -170,9 +163,58 @@ ggplot(data = shapefile_data) +
     mid = "white",    # Neutral color for near-zero residuals
     high = "red",     # Color for positive residuals
     midpoint = 0, # Set 0 as the neutral midpoint,
-    name = "Residual"
-  ) +
+    name = "Residual") +
   theme(legend.position = "right", 
         legend.title = element_text(size = 10), 
         legend.text = element_text(size = 8))
+```
+
+
+### Tables of Recharge by HUC
+```{r}
+NWM_recharge <- data.frame(HUC8 = NWM_shapefile$HUC8, NWM_R_mm = NWM_shapefile$Re_M_WY)
+BFI_recharge <- data.frame(HUC8 = shapefile_data$HUC8, BFI_R_mm = shapefile_data$Recharge_MM)
+
+#Remove HUC that are present in the NWM dataset, but not in the BFI dataset
+# The 2 HUC removed are barely in AZ, but are present in larger HUC shape
+missing_HUC <- which(!(NWM_recharge$HUC8 %in% BFI_recharge$HUC8))
+NWM_recharge <- NWM_recharge[-missing_HUC,]
+
+merged_data <- NWM_recharge %>%
+  inner_join(BFI_recharge, by = "HUC8") %>%
+  mutate(percent_difference = ((BFI_R_mm - NWM_R_mm) / NWM_R_mm) * 100)
+
+# Join data with shapefile on a common column
+shapefile_data <- merge(shapefile_data, merged_data, by = "HUC8")
+
+
+## Look at spread of data
+hist(p_diff, breaks = 30, col = "skyblue", border = "black",
+     main = "Histogram of Percent Difference (p_diff)",
+     xlab = "Percent Difference (%)",
+     ylab = "Frequency")
+
+
+library(scales)  # For the squish function
+
+ggplot(data = shapefile_data) +
+  geom_sf(aes(fill = percent_difference), color = "black", size = 0.3) +
+  labs(title = "Recharge Percent Difference",
+       subtitle = "NWM vs. BFI") +
+  theme_minimal() +
+  scale_fill_gradient2(
+    low = "blue",                   # Color for negative differences
+    mid = "white",                  # Neutral color for near-zero differences
+    high = "red",                   # Color for positive differences
+    midpoint = 0,                   # Set 0 as the midpoint
+    limits = c(-120, 200),          # Set limits to focus on the main range
+    oob = squish,                   # Squish out-of-bound values to the ends of the color scale
+    name = "Percent Difference (%)" # Legend title
+  ) +
+  theme(
+    legend.position = "right",
+    legend.title = element_text(size = 10),
+    legend.text = element_text(size = 8)
+  )
+
 ```
