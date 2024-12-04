@@ -23,17 +23,30 @@ NWM_T <- read.csv(here("1-data/NWM_T_WY.csv"))
 ```{r}
 # Step 1: Reshape NWM_ET into long format
 NWM_ET_long <- NWM_ET %>%
-  pivot_longer(cols = starts_with("X"), names_to = "Year", values_to = "AET_MM") %>%
+  pivot_longer(
+    cols = matches("^X\\d{4}$"), # Match columns like "X1991", "X2020", etc.
+    names_to = "Year",
+    values_to = "AET_MM"
+  ) %>%
   mutate(Year = as.numeric(sub("X", "", Year))) # Remove the 'X' and convert to numeric
 
-# Step 2: Repeat for NWM_P and NWM_T (assuming similar structure as NWM_ET)
+# Step 2: Repeat for NWM_P and NWM_T (similar structure assumed)
 NWM_P_long <- NWM_P %>%
-  pivot_longer(cols = starts_with("X"), names_to = "Year", values_to = "Precip_MM") %>%
+  pivot_longer(
+    cols = matches("^X\\d{4}$"),
+    names_to = "Year",
+    values_to = "Precip_MM"
+  ) %>%
   mutate(Year = as.numeric(sub("X", "", Year)))
 
 NWM_T_long <- NWM_T %>%
-  pivot_longer(cols = starts_with("X"), names_to = "Year", values_to = "Temp_C") %>%
+  pivot_longer(
+    cols = matches("^X\\d{4}$"),
+    names_to = "Year",
+    values_to = "Temp_C"
+  ) %>%
   mutate(Year = as.numeric(sub("X", "", Year)))
+
 
 artificial_pts_nwm <- artificial_pts %>%
   # Remove existing columns if they exist
@@ -79,7 +92,7 @@ write.csv(huc_avg, here('1-data/huc8_recharge_NWM.csv'))
 
 ```{r}
 # Load your shapefile
-shapefile_path <- here("1-data/raw/shapefile/huc8.shp")  # Update this path
+shapefile_path <- here("1-data/raw/shapefile/huc8.shp") 
 shapefile_data <- st_read(shapefile_path)
 shapefile_data <- st_transform(shapefile_data, crs = 32612) #correct CRS
 
@@ -141,66 +154,117 @@ ggplot(data = NWM_shapefile) +
 ```
 
 ```{r}
-NWM_recharge <- data.frame(HUC8 = NWM_shapefile$HUC8, NWM_R_mm = NWM_shapefile$Re_M_WY)
-BFI_recharge <- data.frame(HUC8 = shapefile_data$HUC8, BFI_R_mm = shapefile_data$Recharge_MM)
 
-#Remove HUC that are present in the NWM dataset, but not in the BFI dataset
-# The 2 HUC removed are barely in AZ, but are present in larger HUC shape
-missing_HUC <- which(!(NWM_recharge$HUC8 %in% BFI_recharge$HUC8))
-NWM_recharge <- NWM_recharge[-missing_HUC,]
+NWM_shapefile <- NWM_shapefile %>%
+  dplyr::select(HUC8, Re_M_WY, geometry) # Keep geometry
 
+HUC_data <- shapefile_data %>%
+  dplyr::select(HUC8, Recharge_MM, geometry) # Keep geometry
 
-merged_data <- NWM_recharge %>%  
-  inner_join(BFI_recharge, by = "HUC8") %>%
-  mutate(residual = NWM_R_mm - BFI_R_mm)
-  
-ggplot(data = merged_data) +
-  geom_sf(aes(fill = residual), color = "black", size = 0.3)+
+# Remove HUCs in `NWM_shapefile` not present in `shapefile_data`
+NWM_shapefile <- NWM_shapefile %>%
+  filter(HUC8 %in% HUC_data$HUC8)
+
+# Perform an attribute join while retaining geometry
+merged_data <- NWM_shapefile %>%
+  inner_join(st_drop_geometry(HUC_data), by = "HUC8") %>% # Drop geometry from `shapefile_data` for attribute join
+  mutate(residual = Re_M_WY - Recharge_MM)
+
+residual_volume <- ggplot(data = merged_data) +
+  geom_sf(aes(fill = residual), color = "black", size = 0.3) +
   labs(title = "Recharge Residual (NWM-BFI)") +
   theme_minimal() +
-    scale_fill_gradient2(
+  scale_fill_gradient2(
     low = "blue",     # Color for negative residuals
     mid = "white",    # Neutral color for near-zero residuals
     high = "red",     # Color for positive residuals
-    midpoint = 0, # Set 0 as the neutral midpoint,
-    name = "Residual") +
-  theme(legend.position = "right", 
-        legend.title = element_text(size = 10), 
-        legend.text = element_text(size = 8))
+    midpoint = 0,     # Set 0 as the neutral midpoint
+    name = "Residual (mm)"
+  ) +
+  theme(
+    legend.position = "right",
+    legend.title = element_text(size = 10),
+    legend.text = element_text(size = 8)
+  )
+
 ```
 
 
 ### Tables of Recharge by HUC
 ```{r}
-NWM_recharge <- data.frame(HUC8 = NWM_shapefile$HUC8, NWM_R_mm = NWM_shapefile$Re_M_WY)
-BFI_recharge <- data.frame(HUC8 = shapefile_data$HUC8, BFI_R_mm = shapefile_data$Recharge_MM)
+percentage_shp <- shapefile_data %>%
+  inner_join(st_drop_geometry(NWM_shapefile) %>% dplyr::select(HUC8, Re_M_WY), by = "HUC8") %>%
+  mutate(
+    percent_difference = ((Recharge_MM - Re_M_WY) / Re_M_WY) * 100
+  )
 
-#Remove HUC that are present in the NWM dataset, but not in the BFI dataset
-# The 2 HUC removed are barely in AZ, but are present in larger HUC shape
-missing_HUC <- which(!(NWM_recharge$HUC8 %in% BFI_recharge$HUC8))
-NWM_recharge <- NWM_recharge[-missing_HUC,]
-
-merged_data <- NWM_recharge %>%
-  inner_join(BFI_recharge, by = "HUC8") %>%
-  mutate(percent_difference = ((BFI_R_mm - NWM_R_mm) / NWM_R_mm) * 100)
-
-# Join data with shapefile on a common column
-shapefile_data <- merge(shapefile_data, merged_data, by = "HUC8")
+p_diff <- percentage_shp$percent_difference
 
 
-## Look at spread of data
 hist(p_diff, breaks = 30, col = "skyblue", border = "black",
      main = "Histogram of Percent Difference (p_diff)",
      xlab = "Percent Difference (%)",
      ylab = "Frequency")
 
-
 library(scales)  # For the squish function
 
-ggplot(data = shapefile_data) +
+# Plot using ggplot2
+ggplot(data = percentage_shp) +
   geom_sf(aes(fill = percent_difference), color = "black", size = 0.3) +
-  labs(title = "Recharge Percent Difference",
-       subtitle = "NWM vs. BFI") +
+  labs(
+    title = "Recharge Percent Difference",
+    subtitle = "NWM vs. BFI"
+  ) +
+  theme_minimal() +
+  scale_fill_gradient2(
+    low = "blue",                   # Color for negative differences
+    mid = "white",                  # Neutral color for near-zero differences
+    high = "red",                   # Color for positive differences
+    midpoint = 0,                   # Set 0 as the midpoint
+    limits = c(-120, 200),          # Set limits to focus on the main range
+    oob = squish,                   # Squish out-of-bound values to the ends of the color scale
+    name = "Percent Difference (%)" # Legend title
+  ) +
+  theme(
+    legend.position = "right",
+    legend.title = element_text(size = 10),
+    legend.text = element_text(size = 8)
+  )
+
+
+
+```
+
+
+## Scaled Percentage Difference Map
+
+```{r}
+# Scale Recharge_MM and Re_M_WY from 0 to 1 before calculating percent_difference
+scaled_percent_shp <- shapefile_data %>%
+  inner_join(st_drop_geometry(NWM_shapefile) %>% dplyr::select(HUC8, Re_M_WY), by = "HUC8") %>%
+  mutate(
+    # Scale Recharge_MM and Re_M_WY
+    Recharge_MM_scaled = (Recharge_MM - min(Recharge_MM, na.rm = TRUE)) / (max(Recharge_MM, na.rm = TRUE) - min(Recharge_MM, na.rm = TRUE)),
+    Re_M_WY_scaled = (Re_M_WY - min(Re_M_WY, na.rm = TRUE)) / (max(Re_M_WY, na.rm = TRUE) - min(Re_M_WY, na.rm = TRUE)),
+    # Calculate percent difference based on scaled values
+    percent_difference = ((Recharge_MM_scaled - Re_M_WY_scaled) / Re_M_WY_scaled) * 100
+  )
+
+# Histogram of Percent Difference
+p_diff <- scaled_percent_shp$percent_difference
+
+hist(p_diff, breaks = 30, col = "skyblue", border = "black",
+     main = "Histogram of Percent Difference (p_diff)",
+     xlab = "Percent Difference (%)",
+     ylab = "Frequency")
+
+# Plot using ggplot2
+ggplot(data = scaled_percent_shp) +
+  geom_sf(aes(fill = percent_difference), color = "black", size = 0.3) +
+  labs(
+    title = "Recharge Percent Difference (Scaled)",
+    subtitle = "NWM vs. BFI"
+  ) +
   theme_minimal() +
   scale_fill_gradient2(
     low = "blue",                   # Color for negative differences
@@ -218,3 +282,27 @@ ggplot(data = shapefile_data) +
   )
 
 ```
+
+
+```{r}
+# Calculate metrics: average error, percent error, and relative error
+error_metrics <- shapefile_data %>%
+  inner_join(st_drop_geometry(NWM_shapefile) %>% dplyr::select(HUC8, Re_M_WY), by = "HUC8") %>%
+  mutate(
+    absolute_error = abs(Recharge_MM - Re_M_WY),              # Absolute error
+    percent_error = (absolute_error / Re_M_WY) * 100,        # Percent error
+    relative_error = (Recharge_MM - Re_M_WY) / Re_M_WY       # Relative error
+  ) %>%
+  summarise(
+    mean_absolute_error = mean(absolute_error, na.rm = TRUE), # Mean absolute error
+    mean_percent_error = mean(percent_error, na.rm = TRUE),   # Mean percent error
+    mean_relative_error = mean(relative_error, na.rm = TRUE)  # Mean relative error
+  )
+
+# Print the resulting dataframe
+print(error_metrics)
+
+
+
+```
+
